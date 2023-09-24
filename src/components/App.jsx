@@ -1,90 +1,65 @@
-import { Component } from 'react';
+import { useEffect, useState } from 'react';
 import Searchbar from './Searchbar/Searchbar';
-import { PixabayAPI } from './Api/getPhoto';
 import { ImageGallery } from './ImageGallery/ImageGallery';
 import { Button } from './Button/Button';
 import { Loader } from './Loader/Loader';
+import { getPhotoBySearch } from './Api/getPhoto';
 
-const newsApiService = new PixabayAPI();
+const App = () => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [error, setError] = useState(false);
+  const [page, setPage] = useState(1);
+  const [photos, setPhotos] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [totalPages, setTotalPages] = useState(0);
 
-class App extends Component {
-  state = {
-    isLoading: false,
-    error: '',
-    photos: null,
-    searchQuery: '',
-    totalPages: null,
-    isShowButton: true,
-  };
-
-  handleSetSearchQuery = value => {
-    this.setState({ searchQuery: value });
-  };
-
-  componentDidUpdate(_, prevState) {
-    prevState.searchQuery !== this.state.searchQuery && this.fetchPhoto();
-    // console.log('this.state.photo', this.state);
-  }
-
-  fetchPhoto = async () => {
-    try {
-      this.setState({ isLoading: true, isShowButton: true });
-      newsApiService.resetPage();
-      newsApiService.query = this.state.searchQuery;
-      const data = await newsApiService.getPhotoBySearch();
-      this.setState({ photos: data.hits, totalPages: data.totalHits });
-    } catch (error) {
-      // console.log('error', error.message);
-      this.setState({ error: error.response.data });
-    } finally {
-      this.setState({ isLoading: false });
+  const handleSetSearchQuery = query => {
+    if (query !== searchQuery) {
+      setSearchQuery(query);
+      setPage(1);
+      setPhotos([]);
+      setIsLoading(true);
     }
   };
 
-  loadMore = async () => {
-    try {
-      this.setState({ isLoading: true });
-      newsApiService.incrementPage();
-      const data = await newsApiService.getPhotoBySearch(
-        this.state.searchQuery
-      );
-      this.setState(prev => {
-        return { photos: [...prev.photos, ...data.hits] };
-      });
-      this.checkTotalImages();
-      // console.log('this.state', this.state);
-    } catch (error) {
-      this.setState({ error: error.response.data });
-    } finally {
-      this.setState({ isLoading: false });
+  useEffect(() => {
+    if (!searchQuery) {
+      return;
     }
-  };
+    const fetchImagesAndUpdateState = async () => {
+      try {
+        setError(false);
+        setIsLoading(true);
+        const { hits, totalHits } = await getPhotoBySearch(searchQuery, page);
+        if (!hits.length) {
+          throw new Error('No images found with this word');
+        }
+        setPhotos(prevImages => [...prevImages, ...hits]);
+        setTotalPages(totalHits);
+      } catch (error) {
+        setError(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchImagesAndUpdateState();
+  }, [page, searchQuery]);
 
-  checkTotalImages() {
-    const numb = newsApiService.multiplyPages();
-    if (this.state.totalPages <= numb) this.setState({ isShowButton: false });
-  }
+  const loadMorePhotosClick = () => setPage(prevPage => prevPage + 1);
 
-  render() {
-    const { error, isLoading, photos, searchQuery, isShowButton } = this.state;
-    return (
-      <>
-        {error && <h1>{error}</h1>}
-        <Searchbar submit={this.handleSetSearchQuery} />
+  const shouldShowButton = photos && photos.length < totalPages;
 
-        {photos &&
-          (!photos.length ? (
-            <h1>Images '{searchQuery}' not found</h1>
-          ) : (
-            <ImageGallery photos={photos} onClose={this.toggleModal} />
-          ))}
-        {isLoading && <Loader />}
-        {photos && photos.length > 0 && !isLoading && isShowButton && (
-          <Button loadmore={this.loadMore} showButton={this.state.isLoading} />
-        )}
-      </>
-    );
-  }
-}
+  return (
+    <>
+      <Searchbar submit={handleSetSearchQuery} />
+      {error && <h1>No images found with this word</h1>}
+      {<ImageGallery photos={photos} />}
+      {isLoading && <Loader />}
+      {photos && photos.length && !isLoading && shouldShowButton && (
+        <Button loadmore={loadMorePhotosClick} showButton={isLoading} />
+      )}
+    </>
+  );
+};
 
 export default App;
